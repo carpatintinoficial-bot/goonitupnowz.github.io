@@ -1,87 +1,79 @@
 import { redditPresets } from './reddit_presets.js'
 
-const REDDIT_CLIENT_ID = "yH0aTnJEt6qUgGn835B4vg"
-const REDDIT_USER_AGENT = "org.quantumbadger.redreader/1.25.1"
-
-const REDDIT_API_BASE = "https://oauth.reddit.com/r/"
-const REDDIT_AUTHORIZE_URL = "https://www.reddit.com/api/v1/authorize"
-
-const REDDIT_REDIRECT_URI = "redreader://rr_oauth_redir"
-
 let redditSlideGroups = [];
+let baseUrl = "https://oauth.reddit.com/r/";
 let urlSuffix;
 let redditSlideGroupIndex = 0;
+let redgifsUrlPattern = /http:\/\/[^.]+/;
 
-let subredditInput;
-let pickedSubreddits;
-let redditTimeContainer;
-let profileTextInput;
-let profilePicker;
+// Reddit OAuth configuration.
+//
+// IMPORTANT:
+// The redirect URI below must be registered in the Reddit application's
+// settings and must match exactly.
+const REDDIT_CLIENT_ID = "yH0aTnJEt6qUgGn835B4vg";
+const REDDIT_REDIRECT_URI =
+    "https://carpatintinoficial-bot.github.io/goonitupnowz.github.io/";
 
+const REDDIT_AUTHORIZE_URL =
+    "https://www.reddit.com/api/v1/authorize";
 
-/*
- * Reddit OAuth
- *
- * IMPORTANT:
- * The client ID identifies the Reddit application.
- * API requests themselves require an OAuth access token.
- *
- * This file looks for the token in:
- *
- *     localStorage.redditAccessToken
- *
- * For example:
- *
- *     localStorage.setItem("redditAccessToken", "YOUR_ACCESS_TOKEN")
- *
- * The access token must have the "read" scope.
- */
-
-function getAccessToken() {
-    return localStorage.getItem("redditAccessToken");
-}
+const REDDIT_ACCESS_TOKEN_KEY = "redditAccessToken";
+const REDDIT_TOKEN_EXPIRY_KEY = "redditTokenExpiry";
+const REDDIT_OAUTH_STATE_KEY = "redditOAuthState";
 
 
-function setAccessToken(token) {
+// -----------------------------------------------------------------------------
+// OAuth
+// -----------------------------------------------------------------------------
+
+function getRedditAccessToken() {
+    const token = sessionStorage.getItem(REDDIT_ACCESS_TOKEN_KEY);
+    const expiry = Number(sessionStorage.getItem(REDDIT_TOKEN_EXPIRY_KEY) || 0);
+
     if (!token) {
-        localStorage.removeItem("redditAccessToken");
-        return;
+        return null;
     }
 
-    localStorage.setItem("redditAccessToken", token);
+    // Leave a small safety margin so we don't start a request with
+    // a token that is about to expire.
+    if (expiry && Date.now() >= expiry - 30000) {
+        clearRedditAccessToken();
+        return null;
+    }
+
+    return token;
 }
 
-
-function clearAccessToken() {
-    localStorage.removeItem("redditAccessToken");
+function clearRedditAccessToken() {
+    sessionStorage.removeItem(REDDIT_ACCESS_TOKEN_KEY);
+    sessionStorage.removeItem(REDDIT_TOKEN_EXPIRY_KEY);
 }
 
+function generateOAuthState() {
+    if (window.crypto && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
 
-/*
- * Starts the Reddit OAuth authorization flow.
- *
- * NOTE:
- * REDDIT_REDIRECT_URI must exactly match a redirect URI registered
- * for the Reddit application.
- *
- * The supplied RedReader redirect URI:
- *
- *     redreader://rr_oauth_redir
- *
- * is intended for the RedReader application and cannot normally
- * redirect a browser back into a GitHub Pages website.
- */
-export function startRedditOAuth() {
-    const state = crypto.randomUUID();
+    const array = new Uint8Array(16);
+    crypto.getRandomValues(array);
 
-    sessionStorage.setItem("redditOAuthState", state);
+    return Array.from(array)
+        .map(value => value.toString(16).padStart(2, "0"))
+        .join("");
+}
+
+function startRedditOAuth() {
+    const state = generateOAuthState();
+
+    sessionStorage.setItem(REDDIT_OAUTH_STATE_KEY, state);
 
     const params = new URLSearchParams({
         client_id: REDDIT_CLIENT_ID,
         response_type: "token",
-        state: state,
+        state,
         redirect_uri: REDDIT_REDIRECT_URI,
-        duration: "permanent",
+        duration: "temporary",
         scope: "read"
     });
 
@@ -89,123 +81,228 @@ export function startRedditOAuth() {
         REDDIT_AUTHORIZE_URL + "?" + params.toString();
 }
 
+function processRedditOAuthCallback() {
+    const hash = window.location.hash;
 
-/*
- * Handles an OAuth implicit-grant response if Reddit redirected
- * back to this page with an access_token in the URL fragment.
- *
- * This will only work if REDDIT_REDIRECT_URI points to this web
- * application. It cannot receive redreader://rr_oauth_redir in
- * an ordinary GitHub Pages browser session.
- */
-function processOAuthResponse() {
-    if (!window.location.hash) {
-        return;
+    if (!hash || hash.length <= 1) {
+        return false;
     }
 
-    const hash = window.location.hash.substring(1);
-    const params = new URLSearchParams(hash);
+    const params = new URLSearchParams(hash.substring(1));
 
     const accessToken = params.get("access_token");
-    const state = params.get("state");
-    const storedState = sessionStorage.getItem("redditOAuthState");
+    const returnedState = params.get("state");
+    const error = params.get("error");
+
+    if (error) {
+        console.error("Reddit OAuth error:", error);
+
+        // Remove OAuth parameters from the URL.
+        history.replaceState(
+            null,
+            "",
+            window.location.pathname + window.location.search
+        );
+
+        return false;
+    }
 
     if (!accessToken) {
-        return;
+        return false;
     }
 
-    if (storedState && state !== storedState) {
-        console.error("Reddit OAuth state mismatch");
-        return;
+    const expectedState =
+        sessionStorage.getItem(REDDIT_OAUTH_STATE_KEY);
+
+    if (!expectedState || returnedState !== expectedState) {
+        console.error("Reddit OAuth state mismatch.");
+
+        clearRedditAccessToken();
+        sessionStorage.removeItem(REDDIT_OAUTH_STATE_KEY);
+
+        history.replaceState(
+            null,
+            "",
+            window.location.pathname + window.location.search
+        );
+
+        return false;
     }
 
-    setAccessToken(accessToken);
+    const expiresIn =
+        Number(params.get("expires_in") || 3600);
 
-    sessionStorage.removeItem("redditOAuthState");
+    const expiryTime =
+        Date.now() + (expiresIn * 1000);
 
+    sessionStorage.setItem(
+        REDDIT_ACCESS_TOKEN_KEY,
+        accessToken
+    );
+
+    sessionStorage.setItem(
+        REDDIT_TOKEN_EXPIRY_KEY,
+        String(expiryTime)
+    );
+
+    sessionStorage.removeItem(REDDIT_OAUTH_STATE_KEY);
+
+    // The access token is in the URL fragment. Remove it from the
+    // address bar immediately after reading it.
     history.replaceState(
         null,
-        document.title,
+        "",
         window.location.pathname + window.location.search
     );
+
+    return true;
+}
+
+function ensureRedditLoginUI() {
+    let loginContainer =
+        document.getElementById("redditLoginContainer");
+
+    if (!loginContainer) {
+        loginContainer = document.createElement("div");
+        loginContainer.id = "redditLoginContainer";
+
+        loginContainer.style.display = "flex";
+        loginContainer.style.alignItems = "center";
+        loginContainer.style.gap = "10px";
+        loginContainer.style.margin = "10px 0";
+
+        const target =
+            document.getElementById("pickedSubreddits") ||
+            document.body;
+
+        target.parentNode.insertBefore(
+            loginContainer,
+            target
+        );
+    }
+
+    loginContainer.innerHTML = "";
+
+    const token = getRedditAccessToken();
+
+    if (token) {
+        const status = document.createElement("span");
+        status.innerText = "Reddit connected";
+        status.style.color = "#4caf50";
+
+        const logoutButton =
+            document.createElement("button");
+
+        logoutButton.innerText = "Disconnect Reddit";
+
+        logoutButton.onclick = function() {
+            clearRedditAccessToken();
+            ensureRedditLoginUI();
+        };
+
+        loginContainer.appendChild(status);
+        loginContainer.appendChild(logoutButton);
+    } else {
+        const loginButton =
+            document.createElement("button");
+
+        loginButton.innerText = "Connect Reddit";
+
+        loginButton.onclick = startRedditOAuth;
+
+        loginContainer.appendChild(loginButton);
+    }
 }
 
 
-/*
- * Perform an authenticated Reddit API request.
- */
+// -----------------------------------------------------------------------------
+// Reddit API
+// -----------------------------------------------------------------------------
+
 async function redditFetch(url) {
-    const accessToken = getAccessToken();
+    const accessToken = getRedditAccessToken();
 
     if (!accessToken) {
+        ensureRedditLoginUI();
+
         throw new Error(
-            "No Reddit OAuth access token. Authenticate with Reddit first."
+            "Reddit authentication is required. Click 'Connect Reddit'."
         );
     }
 
     const response = await fetch(url, {
-        method: "GET",
         headers: {
-            "Authorization": "Bearer " + accessToken,
-            "User-Agent": REDDIT_USER_AGENT
-        }
+            "Authorization": "Bearer " + accessToken
+        },
+        referrerPolicy: "no-referrer"
     });
 
     if (response.status === 401) {
-        clearAccessToken();
+        clearRedditAccessToken();
+        ensureRedditLoginUI();
 
         throw new Error(
-            "Reddit OAuth access token expired or is invalid."
+            "Reddit access token expired or was rejected."
         );
     }
 
     if (!response.ok) {
         throw new Error(
-            "Reddit API returned HTTP " +
-            response.status +
-            " for " +
-            url
+            "Reddit API returned HTTP " + response.status
         );
     }
 
-    return response.json();
+    return response;
 }
 
+
+// -----------------------------------------------------------------------------
+// Reddit loading
+// -----------------------------------------------------------------------------
 
 export async function startReddit() {
     addSubreddit();
 
+    // Start fresh if startReddit() is called more than once.
+    redditSlideGroups = [];
+    redditSlideGroupIndex = 0;
+
     let subreddits = [];
 
-    for (const redditElem of document.getElementsByClassName("pickedSubreddit")) {
-        redditElem.innerText.trim().split("+").forEach((sr) => {
-            const subreddit = sr.trim();
+    for (
+        const redditElem
+        of document.getElementsByClassName("pickedSubreddit")
+    ) {
+        redditElem.innerText
+            .trim()
+            .split("+")
+            .forEach((sr) => {
+                const trimmed = sr.trim();
 
-            if (subreddit !== "") {
-                subreddits.push(subreddit);
-            }
-        });
+                if (trimmed !== "") {
+                    subreddits.push(trimmed);
+                }
+            });
     }
 
     if (subreddits.length === 0) {
         return false;
     }
 
-    if (!getAccessToken()) {
-        console.error(
-            "No Reddit OAuth access token. Start the Reddit OAuth flow first."
-        );
+    const sort =
+        document.getElementById("redditSort").value;
 
-        startRedditOAuth();
+    const time =
+        document.getElementById("redditTime").value;
 
-        return false;
-    }
+    const roundRobin =
+        document.getElementById("roundRobin").checked;
 
-    const sort = document.getElementById("redditSort").value;
-    const time = document.getElementById("redditTime").value;
-    const roundRobin = document.getElementById("roundRobin").checked;
-
-    urlSuffix = "/" + sort + ".json?t=" + encodeURIComponent(time);
+    urlSuffix =
+        "/" +
+        sort +
+        ".json?t=" +
+        encodeURIComponent(time);
 
     saveProfile(
         subreddits,
@@ -214,19 +311,14 @@ export async function startReddit() {
         roundRobin
     );
 
-    /*
-     * Reset the previous Reddit session.
-     */
-    redditSlideGroups = [];
-    redditSlideGroupIndex = 0;
-
     if (roundRobin) {
-        redditSlideGroups = shuffle(subreddits).map((subreddit) => ({
-            subreddits: subreddit,
-            slides: [],
-            isLoading: false,
-            after: undefined
-        }));
+        redditSlideGroups =
+            shuffle(subreddits).map((subreddit) => ({
+                subreddits: subreddit,
+                slides: [],
+                isLoading: false,
+                after: undefined
+            }));
     } else {
         redditSlideGroups.push({
             subreddits: shuffle(subreddits).join("+"),
@@ -236,6 +328,12 @@ export async function startReddit() {
         });
     }
 
+    ensureRedditLoginUI();
+
+    if (!getRedditAccessToken()) {
+        return false;
+    }
+
     await Promise.all(
         redditSlideGroups.map(obj => loadNextPage(obj))
     );
@@ -243,19 +341,22 @@ export async function startReddit() {
     return redditSlideGroups.length > 0;
 }
 
-
 function shuffle(array) {
     const copy = [...array];
 
     let currentIndex = copy.length;
+    let randomIndex;
 
     while (currentIndex > 0) {
-        const randomIndex =
+        randomIndex =
             Math.floor(Math.random() * currentIndex);
 
         currentIndex--;
 
-        [copy[currentIndex], copy[randomIndex]] = [
+        [
+            copy[currentIndex],
+            copy[randomIndex]
+        ] = [
             copy[randomIndex],
             copy[currentIndex]
         ];
@@ -264,11 +365,12 @@ function shuffle(array) {
     return copy;
 }
 
-
 async function loadNextPage(slideDefinition) {
-    if (
-        slideDefinition.after === null
-    ) {
+    if (!slideDefinition) {
+        return;
+    }
+
+    if (slideDefinition.after === null) {
         const index =
             redditSlideGroups.indexOf(slideDefinition);
 
@@ -278,7 +380,10 @@ async function loadNextPage(slideDefinition) {
 
         if (redditSlideGroups.length > 0) {
             redditSlideGroupIndex =
-                redditSlideGroupIndex % redditSlideGroups.length;
+                redditSlideGroupIndex %
+                redditSlideGroups.length;
+        } else {
+            redditSlideGroupIndex = 0;
         }
 
         return;
@@ -291,113 +396,123 @@ async function loadNextPage(slideDefinition) {
     slideDefinition.isLoading = true;
 
     let url =
-        REDDIT_API_BASE +
+        baseUrl +
         slideDefinition.subreddits +
         urlSuffix;
 
     if (slideDefinition.after) {
-        url += "&after=" +
+        url +=
+            "&after=" +
             encodeURIComponent(slideDefinition.after);
     }
 
     try {
-        const jsonResp = await redditFetch(url);
+        const response =
+            await redditFetch(url);
+
+        const jsonResp =
+            await response.json();
 
         if (
             !jsonResp ||
             !jsonResp.data ||
             !Array.isArray(jsonResp.data.children)
         ) {
-            throw new Error("Unexpected Reddit API response.");
+            throw new Error(
+                "Reddit returned an unexpected response."
+            );
         }
-
-        slideDefinition.after = jsonResp.data.after;
 
         let metadataPromises = [];
 
-        for (const child of jsonResp.data.children) {
-            const data = child.data;
+        slideDefinition.after =
+            jsonResp.data.after;
 
-            if (data.stickied) {
+        for (
+            let child
+            of jsonResp.data.children
+        ) {
+            if (child.data.stickied) {
                 continue;
             }
 
-            if (data.gallery_data && data.media_metadata) {
-                for (const galleryChild of data.gallery_data.items) {
-                    const mediaId = galleryChild.media_id;
-                    const media = data.media_metadata[mediaId];
+            if (child.data.gallery_data) {
+                for (
+                    let gallery_child
+                    of child.data.gallery_data.items
+                ) {
+                    const mediaId =
+                        gallery_child.media_id;
 
-                    if (!media) {
-                        continue;
-                    }
+                    const media =
+                        child.data.media_metadata &&
+                        child.data.media_metadata[mediaId];
 
-                    if (
-                        media.m &&
-                        media.m.indexOf("image") === 0
-                    ) {
-                        const fileEnding =
-                            media.m.split("/")[1];
+                    if (media) {
+                        if (
+                            media.m &&
+                            media.m.indexOf("image") === 0
+                        ) {
+                            const fileEnding =
+                                media.m.split("/")[1];
 
-                        slideDefinition.slides.push({
-                            type: "short",
-                            url:
-                                "https://i.redd.it/" +
-                                media.id +
-                                "." +
-                                fileEnding,
-                            format: "image",
-                            width: media.s.x,
-                            height: media.s.y
-                        });
+                            slideDefinition.slides.push({
+                                type: "short",
+                                url:
+                                    "https://i.redd.it/" +
+                                    media.id +
+                                    "." +
+                                    fileEnding,
+                                format: "image",
+                                width: media.s.x,
+                                height: media.s.y
+                            });
+                        }
                     }
                 }
-
-                continue;
-            }
-
-            if (
-                data.media_embed &&
-                data.media_embed.content
+            } else if (
+                child.data.media_embed &&
+                child.data.media_embed.content
             ) {
                 const elem =
                     document.createElement("div");
 
                 elem.innerHTML =
-                    data.media_embed.content;
+                    child.data.media_embed.content;
 
-                const decoded = elem.innerText;
+                const decoded =
+                    elem.innerText;
 
                 slideDefinition.slides.push({
                     type: "iframe",
                     html: decoded,
-                    height: data.media_embed.height,
-                    width: data.media_embed.width
+                    height:
+                        child.data.media_embed.height,
+                    width:
+                        child.data.media_embed.width
                 });
-
-                continue;
-            }
-
-            if (
-                data.url &&
-                /\.(jpg|jpeg|png|gif|bmp|webp|svg|tiff)$/i.test(data.url)
+            } else if (
+                child.data.url &&
+                /\.(jpg|jpeg|png|gif|bmp|webp|svg|tiff)$/i
+                    .test(child.data.url)
             ) {
                 const imgObj = {
                     type: "short",
-                    url: data.url,
+                    url: child.data.url,
                     format: "image"
                 };
 
                 if (
-                    data.preview &&
-                    data.preview.images &&
-                    data.preview.images[0] &&
-                    data.preview.images[0].source
+                    child.data.preview &&
+                    child.data.preview.images &&
+                    child.data.preview.images[0] &&
+                    child.data.preview.images[0].source
                 ) {
                     imgObj.width =
-                        data.preview.images[0].source.width;
+                        child.data.preview.images[0].source.width;
 
                     imgObj.height =
-                        data.preview.images[0].source.height;
+                        child.data.preview.images[0].source.height;
                 } else {
                     metadataPromises.push(
                         loadImageMetadata(imgObj)
@@ -425,13 +540,15 @@ async function loadNextPage(slideDefinition) {
 
         if (redditSlideGroups.length > 0) {
             redditSlideGroupIndex =
-                redditSlideGroupIndex % redditSlideGroups.length;
+                redditSlideGroupIndex %
+                redditSlideGroups.length;
+        } else {
+            redditSlideGroupIndex = 0;
         }
     }
 
     slideDefinition.isLoading = false;
 }
-
 
 function loadImageMetadata(imgObj) {
     return new Promise((resolve) => {
@@ -444,11 +561,7 @@ function loadImageMetadata(imgObj) {
         };
 
         img.onerror = function(e) {
-            console.error(
-                "Could not load image:",
-                imgObj.url,
-                e
-            );
+            console.error(e);
 
             imgObj.width = 1;
             imgObj.height = 1;
@@ -460,14 +573,16 @@ function loadImageMetadata(imgObj) {
     });
 }
 
-
-function scaleWidth(fitHeight, height, width) {
+function scaleWidth(
+    fitHeight,
+    height,
+    width
+) {
     const scaleFactor =
         fitHeight / height;
 
     return width * scaleFactor;
 }
-
 
 export async function nextRedditSlides(
     remainingWidth,
@@ -482,46 +597,51 @@ export async function nextRedditSlides(
         redditSlideGroups.length > 0
     ) {
         if (
-            !redditSlideGroups[redditSlideGroupIndex]
+            redditSlideGroupIndex >=
+            redditSlideGroups.length
         ) {
             redditSlideGroupIndex = 0;
         }
 
+        const currentGroup =
+            redditSlideGroups[
+                redditSlideGroupIndex
+            ];
+
+        if (!currentGroup) {
+            break;
+        }
+
         while (
-            redditSlideGroups.length > 0 &&
-            redditSlideGroups[redditSlideGroupIndex].slides.length === 0
+            currentGroup.slides.length === 0 &&
+            !currentGroup.isLoading
         ) {
-            const group =
-                redditSlideGroups[redditSlideGroupIndex];
+            await loadNextPage(currentGroup);
 
-            if (group.isLoading) {
-                return toAdd;
+            if (
+                !redditSlideGroups.includes(currentGroup)
+            ) {
+                break;
             }
+        }
 
-            redditSlideGroups.splice(
-                redditSlideGroupIndex,
-                1
-            );
-
+        if (
+            !redditSlideGroups.includes(currentGroup)
+        ) {
             if (redditSlideGroups.length === 0) {
-                return toAdd;
+                break;
             }
 
             redditSlideGroupIndex =
                 redditSlideGroupIndex %
                 redditSlideGroups.length;
-        }
 
-        if (redditSlideGroups.length === 0) {
-            break;
+            continue;
         }
-
-        const group =
-            redditSlideGroups[redditSlideGroupIndex];
 
         const slideInfo =
             getSlideFromGroup(
-                group,
+                currentGroup,
                 newRemainingWidth,
                 height,
                 isEmpty
@@ -532,11 +652,11 @@ export async function nextRedditSlides(
         }
 
         if (
-            group.slides.length < 10 &&
-            !group.isLoading &&
-            group.after !== null
+            currentGroup.slides.length < 10 &&
+            !currentGroup.isLoading &&
+            currentGroup.after !== null
         ) {
-            loadNextPage(group);
+            loadNextPage(currentGroup);
         }
 
         redditSlideGroupIndex =
@@ -551,7 +671,6 @@ export async function nextRedditSlides(
 
     return toAdd;
 }
-
 
 function getSlideFromGroup(
     redditSlideGroup,
@@ -571,6 +690,13 @@ function getSlideFromGroup(
         const slide =
             redditSlideGroup.slides[i];
 
+        if (
+            !slide.height ||
+            !slide.width
+        ) {
+            continue;
+        }
+
         const scaledWidth =
             scaleWidth(
                 height,
@@ -582,13 +708,12 @@ function getSlideFromGroup(
             scaledWidth;
 
         if (
-            scaledWidth < newRemainingWidth
+            scaledWidth <
+            newRemainingWidth
         ) {
             const selected =
-                redditSlideGroup.slides.splice(
-                    i,
-                    1
-                )[0];
+                redditSlideGroup.slides
+                    .splice(i, 1)[0];
 
             newRemainingWidth -=
                 scaledWidth;
@@ -607,31 +732,34 @@ function getSlideFromGroup(
         const first =
             redditSlideGroup.slides[0];
 
-        const scaledHeight =
-            scaleWidth(
-                remainingWidth,
-                first.width,
-                first.height
-            );
+        if (
+            first.width &&
+            first.height
+        ) {
+            const scaledHeight =
+                scaleWidth(
+                    remainingWidth,
+                    first.width,
+                    first.height
+                );
 
-        const scaledWidth =
-            scaleWidth(
-                scaledHeight,
-                first.height,
-                first.width
-            );
+            const scaledWidth =
+                scaleWidth(
+                    scaledHeight,
+                    first.height,
+                    first.width
+                );
 
-        first.scaledWidth =
-            scaledWidth;
+            first.scaledWidth =
+                scaledWidth;
+        }
 
-        const selected =
-            redditSlideGroup.slides.splice(
-                0,
-                1
-            )[0];
+        const slide =
+            redditSlideGroup.slides
+                .splice(0, 1)[0];
 
         return {
-            slide: selected,
+            slide,
             newRemainingWidth: 0
         };
     }
@@ -640,58 +768,48 @@ function getSlideFromGroup(
 }
 
 
+// -----------------------------------------------------------------------------
+// UI / Profiles
+// -----------------------------------------------------------------------------
+
+let subredditInput;
+let pickedSubreddits;
+let redditTimeContainer;
+let profileTextInput;
+let profilePicker;
+
 function addSubreddit() {
     const val =
         subredditInput.value;
 
     if (val.trim() !== "") {
         addSubredditValue(val);
+
         subredditInput.value = "";
     }
 }
-
 
 function addSubredditValue(subredditName) {
     const divElem =
         document.createElement("div");
 
-    /*
-     * Use textContent rather than innerHTML here.
-     * This prevents subreddit input from being interpreted
-     * as HTML.
-     */
-    const span =
-        document.createElement("span");
+    divElem.innerHTML =
+        '<span class="pickedSubreddit">' +
+        subredditName +
+        "</span> <button>Remove</button>";
 
-    span.className =
-        "pickedSubreddit";
-
-    span.innerText =
-        subredditName;
-
-    const button =
-        document.createElement("button");
-
-    button.innerText =
-        "Remove";
-
-    divElem.appendChild(span);
-    divElem.appendChild(
-        document.createTextNode(" ")
-    );
-    divElem.appendChild(button);
-
-    button.onclick = function() {
-        pickedSubreddits.removeChild(
-            divElem
-        );
-    };
+    divElem
+        .getElementsByTagName("button")[0]
+        .onclick = function() {
+            pickedSubreddits.removeChild(
+                divElem
+            );
+        };
 
     pickedSubreddits.appendChild(
         divElem
     );
 }
-
 
 function changeSort() {
     const val =
@@ -711,15 +829,17 @@ function changeSort() {
     }
 }
 
-
 function setSelectValue(
     selectElement,
     value
 ) {
     for (
-        const child of selectElement.children
+        const child
+        of selectElement.children
     ) {
-        if (child.value === value) {
+        if (
+            child.value == value
+        ) {
             child.setAttribute(
                 "selected",
                 "selected"
@@ -732,12 +852,13 @@ function setSelectValue(
     }
 }
 
-
 function profileChanged(event) {
     let profileName =
         event.target.value.trim();
 
-    if (profileName === "__create") {
+    if (
+        profileName === "__create"
+    ) {
         document.getElementById(
             "profileInput"
         ).style.display = "flex";
@@ -753,7 +874,9 @@ function profileChanged(event) {
         let profile;
 
         if (
-            profileName.indexOf("--preset--") === 0
+            profileName.indexOf(
+                "--preset--"
+            ) === 0
         ) {
             profileName =
                 profileName.replace(
@@ -764,7 +887,8 @@ function profileChanged(event) {
             profile =
                 redditPresets.filter(
                     prof =>
-                        prof.name === profileName
+                        prof.name ==
+                        profileName
                 )[0];
         } else {
             const redditProfileString =
@@ -786,7 +910,8 @@ function profileChanged(event) {
             profile =
                 customProfiles.filter(
                     prof =>
-                        prof.name === profileName
+                        prof.name ==
+                        profileName
                 )[0];
         }
 
@@ -810,7 +935,8 @@ function profileChanged(event) {
             profile.time
         );
 
-        pickedSubreddits.innerHTML = "";
+        pickedSubreddits.innerHTML =
+            "";
 
         profile.subreddits.forEach(
             addSubredditValue
@@ -822,7 +948,6 @@ function profileChanged(event) {
             !!profile.roundRobin;
     }
 }
-
 
 function saveProfile(
     subreddits,
@@ -840,7 +965,9 @@ function saveProfile(
         name !== ""
     ) {
         if (
-            name.indexOf("--preset--") === 0
+            name.indexOf(
+                "--preset--"
+            ) === 0
         ) {
             name =
                 name.replace(
@@ -851,7 +978,8 @@ function saveProfile(
             const preset =
                 redditPresets.find(
                     profile =>
-                        profile.name === name
+                        profile.name ===
+                        name
                 );
 
             if (
@@ -891,7 +1019,6 @@ function saveProfile(
     }
 }
 
-
 function fillProfiles() {
     const redditProfileString =
         localStorage.getItem(
@@ -904,14 +1031,18 @@ function fillProfiles() {
         );
 
     for (
-        const preset of redditPresets
+        const preset
+        of redditPresets
     ) {
         const option =
-            document.createElement("option");
+            document.createElement(
+                "option"
+            );
 
         option.setAttribute(
             "value",
-            "--preset--" + preset.name
+            "--preset--" +
+            preset.name
         );
 
         option.innerText =
@@ -936,10 +1067,13 @@ function fillProfiles() {
             );
 
         for (
-            const profileName of redditProfileNames
+            const profileName
+            of redditProfileNames
         ) {
             const option =
-                document.createElement("option");
+                document.createElement(
+                    "option"
+                );
 
             option.setAttribute(
                 "value",
@@ -957,12 +1091,13 @@ function fillProfiles() {
 }
 
 
+// -----------------------------------------------------------------------------
+// Initialization
+// -----------------------------------------------------------------------------
+
 export function initReddit() {
-    /*
-     * Process an OAuth response if one is
-     * present in the URL.
-     */
-    processOAuthResponse();
+    // Process a token returned by Reddit before doing anything else.
+    processRedditOAuth();
 
     pickedSubreddits =
         document.getElementById(
@@ -1010,4 +1145,6 @@ export function initReddit() {
         profileChanged;
 
     fillProfiles();
+
+    ensureRedditLoginUI();
 }
