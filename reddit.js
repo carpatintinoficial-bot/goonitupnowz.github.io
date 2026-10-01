@@ -1,7 +1,7 @@
 import { redditPresets } from './reddit_presets.js'
 
 let redditSlideGroups = [];
-let baseUrl = "https://www.reddit.com/r/";
+let baseUrl = "https://old.reddit.com/r/";
 let urlSuffix;
 let redditSlideGroupIndex = 0;
 let redgifsUrlPattern = /http:\/\/[^.]+/
