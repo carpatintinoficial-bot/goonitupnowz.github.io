@@ -1,126 +1,277 @@
-<!DOCTYPE html>
-<html>
-    <head>
-        <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
-        <script type="module" src="script.js"></script>
-        <script src="tooltip.js"></script>
-        <link href="style.css" rel="stylesheet"></style>
-        <link href="tooltip.css" rel="stylesheet"></style>
-    </head>
-    <body>
-        <div id="menu-hover">
-            <div id="menu" style="display: none;">
-                <div id="bar">
-                    <a href="#" id="settings">settings</a> | <a href="#" id="volume">volume</a>
-                </div>
-                <div id="volumeControl">
-                    <svg width="40" height="150">
-                        <rect width="6" height="130" x="17" y = "10" stroke="lightgray" fill="lightgray"/>
-                        <circle cx="20" cy="16" r="12" stroke="black" fill="white" id="volumeSlider"/>
-                    </svg>
-                </div>
-            </div>
-            <div id="menu-tip">
-                <div>Menu</div>
-                <div><img src="resources/arrow.webp"/></div>
-            </div>
-        </div>
-        <div id="settingsDialog">
-            <div id="settingsClose"><a href="#">[x]</a></div>
-            <h3>Instant settings</h3>
-            <div class="settingsRow"><span>Rows</span><input type="number" value="2" id="rows" autocomplete="off"/></div>
-            <div class="settingsRow"><span>Next image (seconds)</span><input type="number" value="20" id="nextImageSec" autocomplete="off"/></div>
-            <div class="settingsRow"><span>Background color (RGB, ffc0cb)</span><input type="text" value="ffc0cb" id="backgroundColor" title="RGB color in format ffffff" autocomplete="off"/></div>
-            <div class="settingsRow"><span>Background image</span></div>
-            <div class="settingsRow sub"><span>Image</span><input type="file" accept=".png,.svg,.jpg,.gif,.webp" id="backgroundImage" autocomplete="off" /></div>
-            <div class="settingsRow sub"><span>Mode</span><span><input type="radio" id="fit" name="imageMode" autocomplete="off" /><label for="fit"> fit</label> 
-            <input type="radio" id="fill" name="imageMode" checked autocomplete="off" /><label for="fill"> fill</label></span></div>
-            <div class="settingsRow sub"><span>Clear</span><button type="button" id="clearBackgroundImage">Clear</button></div>
-            <h3>Settings that require refresh</h3>
-            <div class="settingsRow"><span>Video split length (seconds)</span><input type="number" value="60" id="videoSplitLength" autocomplete="off"/></div>
-            <button id="settingsApply">Apply and refresh</button>
+<!DOCTYPE html> <html> <head> <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script> <script type="module" src="script.js"></script> <script type="module"> import { initReddit } from './reddit.js';
+        document.addEventListener('DOMContentLoaded', () => {
+            initReddit();
+        });
+    </script>
+    <script src="tooltip.js"></script>
 
+    <link href="style.css" rel="stylesheet">
+    <link href="tooltip.css" rel="stylesheet">
+</head>
+
+<body>
+    <div id="menu-hover">
+        <div id="menu" style="display: none;">
+            <div id="bar">
+                <a href="#" id="settings">settings</a> |
+                <a href="#" id="volume">volume</a>
+            </div>
+
+            <div id="volumeControl">
+                <svg width="40" height="150">
+                    <rect width="6" height="130" x="17" y="10"
+                          stroke="lightgray" fill="lightgray"/>
+                    <circle cx="20" cy="16" r="12"
+                            stroke="black" fill="white"
+                            id="volumeSlider"/>
+                </svg>
+            </div>
         </div>
-        <div id="welcome">
-            <img id="ahegao-left" src="resources/ahegao left.png"/>
-            <img id="ahegao-right" src="resources/ahegao right.png"/>
-            <div id="welcomeArea">
-                <div id="load-container">
-                    <img src="resources/load left.png" id="load-left"/>
-                    <img src="resources/load right.png" id="load-right"/>
-                    <svg viewBox="0 0 90 200" xmlns="http://www.w3.org/2000/svg" id="bucket">
-                        <path id="path" fill="#ffffff" stroke="#aaaaaa" d="
-                            m0,0 v170 C0 180 90 180 90 167 v-130 C60 40 30 0 0 0 z
-                        "></path>
-                        <path fill-opacity="0" stroke="#aaaaaa" stroke-width="3" d="m0,0 v170 m90,0 v-170 z"></path>
-                        <path fill-opacity="0" stroke="#aaaaaa" stroke-width="2" d="m0,170 C0 180 90 180 90 170"></path>
-                    </svg>
+
+        <div id="menu-tip">
+            <div>Menu</div>
+            <div>
+                <img src="resources/arrow.webp"/>
+            </div>
+        </div>
+    </div>
+
+    <div id="settingsDialog">
+        <div id="settingsClose">
+            <a href="#">[x]</a>
+        </div>
+
+        <h3>Instant settings</h3>
+
+        <div class="settingsRow">
+            <span>Rows</span>
+            <input type="number" value="2" id="rows" autocomplete="off"/>
+        </div>
+
+        <div class="settingsRow">
+            <span>Next image (seconds)</span>
+            <input type="number" value="20" id="nextImageSec" autocomplete="off"/>
+        </div>
+
+        <div class="settingsRow">
+            <span>Background color (RGB, ffc0cb)</span>
+            <input type="text"
+                   value="ffc0cb"
+                   id="backgroundColor"
+                   title="RGB color in format ffffff"
+                   autocomplete="off"/>
+        </div>
+
+        <div class="settingsRow">
+            <span>Background image</span>
+        </div>
+
+        <div class="settingsRow sub">
+            <span>Image</span>
+            <input type="file"
+                   accept=".png,.svg,.jpg,.gif,.webp"
+                   id="backgroundImage"
+                   autocomplete="off"/>
+        </div>
+
+        <div class="settingsRow sub">
+            <span>Mode</span>
+            <span>
+                <input type="radio"
+                       id="fit"
+                       name="imageMode"
+                       autocomplete="off"/>
+                <label for="fit">fit</label>
+
+                <input type="radio"
+                       id="fill"
+                       name="imageMode"
+                       checked
+                       autocomplete="off"/>
+                <label for="fill">fill</label>
+            </span>
+        </div>
+
+        <div class="settingsRow sub">
+            <span>Clear</span>
+            <button type="button" id="clearBackgroundImage">
+                Clear
+            </button>
+        </div>
+
+        <h3>Settings that require refresh</h3>
+
+        <div class="settingsRow">
+            <span>Video split length (seconds)</span>
+            <input type="number"
+                   value="60"
+                   id="videoSplitLength"
+                   autocomplete="off"/>
+        </div>
+
+        <button id="settingsApply">
+            Apply and refresh
+        </button>
+    </div>
+
+    <div id="welcome">
+        <img id="ahegao-left" src="resources/ahegao left.png"/>
+        <img id="ahegao-right" src="resources/ahegao right.png"/>
+
+        <div id="welcomeArea">
+            <div id="load-container">
+                <img src="resources/load left.png" id="load-left"/>
+                <img src="resources/load right.png" id="load-right"/>
+
+                <svg viewBox="0 0 90 200"
+                     xmlns="http://www.w3.org/2000/svg"
+                     id="bucket">
+                    <path id="path"
+                          fill="#ffffff"
+                          stroke="#aaaaaa"
+                          d="
+                            m0,0
+                            v170
+                            C0 180 90 180 90 167
+                            v-130
+                            C60 40 30 0 0 0
+                            z
+                          ">
+                    </path>
+
+                    <path fill-opacity="0"
+                          stroke="#aaaaaa"
+                          stroke-width="3"
+                          d="m0,0 v170 m90,0 v-170 z">
+                    </path>
+
+                    <path fill-opacity="0"
+                          stroke="#aaaaaa"
+                          stroke-width="2"
+                          d="m0,170 C0 180 90 180 90 170">
+                    </path>
+                </svg>
+            </div>
+
+            <img class="titleContent" src="resources/title.png"/>
+
+            <p class="titleContent noForm">
+                Tiled slideshow for reddit or your local files.
+            </p>
+
+            <p class="titleContent noForm">
+                No files are uploaded. The slideshow is run on your computer.
+            </p>
+
+            <button class="titleContent browse noForm" id="browse">
+                Pick folder
+            </button>
+
+            <button class="titleContent browse noForm" id="browseReddit">
+                From reddit
+            </button>
+
+            <div id="redditForm" style="display: none;">
+                <div>
+                    <label>Profile</label>
+
+                    <select id="profilePicker">
+                        <option value="__none" selected>-</option>
+                        <option value="__create">Create New</option>
+
+                        <optgroup label="Presets">
+                        </optgroup>
+
+                        <optgroup label="Custom">
+                        </optgroup>
+                    </select>
                 </div>
-                <img class="titleContent" src="resources/title.png"/>
-                <p class="titleContent noForm">Tiled slideshow for reddit or your local files.</p>
-                <p class="titleContent noForm">No files are uploaded. The slideshow is run on your computer.</p>
-                <button class="titleContent browse noForm" id="browse">Pick folder</button> <button class="titleContent browse noForm" id="browseReddit">From reddit</button>
-                <div id="redditForm" style="display: none;">
-                    <div>
-                        <label>Profile</label>
-                        <select id="profilePicker">
-                            <option value="__none" selected>-</option>
-                            <option value="__create">Create New</option>
-                            <optgroup label="Presets">
-                            </optgroup>
-                            <optgroup label="Custom">
-                            </optgroup>
-                        </select>
-                    </div>
-                    <div id="profileInput" style="display: none;">
-                        <label>Profile name</label>
-                        <input type="text" id="profileNameInput" autocomplete="off" value="">
-                    </div>
-                    <div>
-                        <label>Sort</label>
-                        <select id="redditSort" autocomplete="off">
-                            <option value="hot" selected>Hot</option>
-                            <option value="rising">Rising</option>
-                            <option value="top">Top</option>
-                            <option value="controversial">Controversial</option>
-                        </select>
-                    </div>
-                    <div style="display: none;" id="redditTimeContainer">
-                        <label>Time range</label><select id="redditTime" autocomplete="off">
-                            <option value="hour">Past hour</option>
-                            <option value="day" selected>Past 24 hours</option>
-                            <option value="week">Past week</option>
-                            <option value="month">Past month</option>
-                            <option value="year">Past year</option>
-                            <option value="all">All time</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="subredditInput">Subreddits</label><span><input type="text" placeholder="subreddit" id="subredditInput" autocomplete="off" /><button id="subredditAdd">Add</button></span>
-                    </div>
-                    <div>
-                        <span></span><span id="pickedSubreddits"></span>
-                    </div>
-                    <div>
-                        <div class="tooltip-container">
-                            <label for="roundRobin" class="tooltip-target">Round Robin (?)</label>
-                            <div class="tooltip">
-                                Instead of taking all subreddits and sorting them together,
-                                this option will sort each subreddit individually and then
-                                take one slide from each subreddit at a time.
-                            </div>
+
+                <div id="profileInput" style="display: none;">
+                    <label>Profile name</label>
+
+                    <input type="text"
+                           id="profileNameInput"
+                           autocomplete="off"
+                           value="">
+                </div>
+
+                <div>
+                    <label>Sort</label>
+
+                    <select id="redditSort" autocomplete="off">
+                        <option value="hot" selected>Hot</option>
+                        <option value="rising">Rising</option>
+                        <option value="top">Top</option>
+                        <option value="controversial">Controversial</option>
+                    </select>
+                </div>
+
+                <div style="display: none;" id="redditTimeContainer">
+                    <label>Time range</label>
+
+                    <select id="redditTime" autocomplete="off">
+                        <option value="hour">Past hour</option>
+                        <option value="day" selected>Past 24 hours</option>
+                        <option value="week">Past week</option>
+                        <option value="month">Past month</option>
+                        <option value="year">Past year</option>
+                        <option value="all">All time</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="subredditInput">Subreddits</label>
+
+                    <span>
+                        <input type="text"
+                               placeholder="subreddit"
+                               id="subredditInput"
+                               autocomplete="off"/>
+
+                        <button id="subredditAdd">
+                            Add
+                        </button>
+                    </span>
+                </div>
+
+                <div>
+                    <span></span>
+                    <span id="pickedSubreddits"></span>
+                </div>
+
+                <div>
+                    <div class="tooltip-container">
+                        <label for="roundRobin"
+                               class="tooltip-target">
+                            Round Robin (?)
+                        </label>
+
+                        <div class="tooltip">
+                            Instead of taking all subreddits and sorting them together,
+                            this option will sort each subreddit individually and then
+                            take one slide from each subreddit at a time.
                         </div>
-                        <input type="checkbox" autocomplete="off" id="roundRobin" />
                     </div>
-                    <div>
-                        <button id="redditSubmit">Show Me Porn!</button>
-                    </div>
+
+                    <input type="checkbox"
+                           autocomplete="off"
+                           id="roundRobin"/>
+                </div>
+
+                <div>
+                    <button id="redditSubmit">
+                        Show Me Porn!
+                    </button>
                 </div>
             </div>
         </div>
-        <div id="slideshow-grid">
-            <div class="slideshow-row">
-            </div>
+    </div>
+
+    <div id="slideshow-grid">
+        <div class="slideshow-row">
         </div>
-    </body>
+    </div>
+</body>
+
 </html>
